@@ -76,7 +76,9 @@ def transferToClean(src, dest, name):
     shutil.move(f"{dest}/{src}", new_path)
 
 # Load Whisper model
-model = whisper.load_model('large')
+model = whisper.load_model('large') # Using 'large' specifically because of certain words in Marathon
+# Feel free to replace this model with something smaller:
+# https://github.com/openai/whisper/blob/main/model-card.md
 
 # Create "clean" folder if it doesn't exist
 if not os.path.exists("clean"):
