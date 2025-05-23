@@ -5,6 +5,8 @@ import logging
 import torch
 import time
 import sys
+import argparse
+import threading
 
 '''
                  ..............              
@@ -75,10 +77,52 @@ def transferToClean(src, dest, name):
     new_path = f"{dest}/{name}"
     shutil.move(f"{dest}/{src}", new_path)
 
-# Load Whisper model
-model = whisper.load_model('large') # Using 'large' specifically because of certain words in Marathon
-# Feel free to replace this model with something smaller:
-# https://github.com/openai/whisper/blob/main/model-card.md
+parser = argparse.ArgumentParser(description='Speech-to-text-recognition-powered Mass File Renamer.\nBy Kry.exe for the Marathon community.')
+parser.add_argument('--model', type=str, choices=['tiny', 'base', 'small', 'medium', 'large'],
+                    help='Override automatic model selection with a specific model size.\nGo to https://github.com/openai/whisper/blob/main/model-card.md for more info.')
+args = parser.parse_args()
+
+# Variables for background model loading
+model = None
+device = None
+model_loaded = False
+load_error = None
+model_size = None
+
+def load_model_background():
+    global model, device, model_loaded, load_error, model_size
+    try:
+        if args.model:
+            model_size = args.model
+        else:
+            if torch.cuda.is_available():
+                gpu_properties = torch.cuda.get_device_properties(0)
+                vram_gb = gpu_properties.total_memory / (1024**3)
+                
+                if vram_gb >= 11:
+                    model_size = 'large'
+                elif vram_gb >= 6:
+                    model_size = 'medium'
+                elif vram_gb >= 3:
+                    model_size = 'small'
+                elif vram_gb >= 2:
+                    model_size = 'base'
+                else:
+                    model_size = 'tiny'
+            else:
+                model_size = 'large'  # Default for CPU
+        
+        # Load Whisper model
+        model = whisper.load_model(model_size)
+        
+        # Use CUDA for faster transcription if available
+        torch.cuda.init()
+        device = "cuda"
+        model_loaded = True
+    except Exception as e:
+        load_error = e
+        device = "cpu"
+        model_loaded = True
 
 # Create "clean" folder if it doesn't exist
 if not os.path.exists("clean"):
@@ -92,66 +136,79 @@ formatter = logging.Formatter('[%(levelname)s] %(message)s')
 file_handler.setFormatter(formatter)
 logger.addHandler(file_handler)
 
-# Print fancy text, feel free to comment all of this out lol
-print(consoleColors.OKGREEN)
-print("CyAc(TM) Secure Terminal v15.193792102158E+9")
-print("[UNANTICIPATED SIGNAL OVERRIDE]")
-print("<<ENGAGING AI TRANSLATION LAYER>>")
-print("Successfully initialized. Proceeding.")
-print("")
-print("               ::::::::::            ")
-time.sleep(0.001)
-print("           ::::::::::::::::::        ")
-time.sleep(0.001)
-print("         ::::::::::::::::::::::.     ")
-time.sleep(0.001)
-print("       ::::::::::::::::::::::::::    ")
-time.sleep(0.001)
-print("      ::::::::::::::::::::::::::::.  ")
-time.sleep(0.001)
-print("    .::::::::::::::::::::::::::::::. ")
-time.sleep(0.001)
-print("    :::::::::::::::::::::::::::::::: ")
-time.sleep(0.001)
-print("   .::::::::::::::::::::::::::::::::.")
-time.sleep(0.001)
-print("   ::::::::::::::::::::::::::::::::::")
-time.sleep(0.001)   
-print("   :::::::::::::::::     .:::::.     ")
-time.sleep(0.001)
-print("   .::::::::::::::::  .:::::::::::.  ")
-time.sleep(0.001)
-print("    :::::::::::::::: ::::::::::::::: ")
-time.sleep(0.001)
-print("    .:::::::::::::::.:::::::::::::::.")
-time.sleep(0.001)
-print("      :::::::::::::::::::::::::::::::")
-time.sleep(0.001)
-print("       :::::::::::::.::::::::::::::::")
-time.sleep(0.001)
-print("        .::::::::::: ::::::::::::::::")
-time.sleep(0.001)        
-print("           :::::::::  .::::::::::::::")
-time.sleep(0.001)
-print("               :::::     ::::::::::::")
-print("")
-print("Everything runs on CyAc // OR NOTHING RUNS AT ALL.\n")
-progPrint("===========\n")
-print("")
+# Start loading model in background
+load_thread = threading.Thread(target=load_model_background)
+load_thread.start()
 
-#Use CUDA for faster transcription if available
-try:
-    torch.cuda.init()
-    device = "cuda"
-    print("Successfully loaded CUDA.\n")
-    logger.info("CUDA Initialized")
-    progPrint("[##############################] 100%\n")
-    print("")
-except Exception as e:
+# Print fancy text, feel free to comment all of this out lol
+print("Connecting...")
+time.sleep(1)
+print(consoleColors.OKGREEN)
+
+os.system('cls' if os.name == 'nt' else 'clear')
+
+startup_ascii = [
+    "CyAc(TM) Secure Terminal v15.193792102158E+9",
+    "[UNANTICIPATED SIGNAL OVERRIDE]",
+    "<<LOADING AI TRANSLATION LAYER>>",
+    "Successfully initialized. Proceeding.",
+    "",
+    "               ::::::::::            ",
+    "           ::::::::::::::::::        ",
+    "         ::::::::::::::::::::::.     ",
+    "       ::::::::::::::::::::::::::    ",
+    "      ::::::::::::::::::::::::::::.  ",
+    "    .::::::::::::::::::::::::::::::. ",
+    "    :::::::::::::::::::::::::::::::: ",
+    "   .::::::::::::::::::::::::::::::::.",
+    "   ::::::::::::::::::::::::::::::::::",
+    "   :::::::::::::::::     .:::::.     ",
+    "   .::::::::::::::::  .:::::::::::.  ",
+    "    :::::::::::::::: ::::::::::::::: ",
+    "    .:::::::::::::::.:::::::::::::::.",
+    "      :::::::::::::::::::::::::::::::",
+    "       :::::::::::::.::::::::::::::::",
+    "        .::::::::::: ::::::::::::::::",
+    "           :::::::::  .::::::::::::::",
+    "               :::::     ::::::::::::",
+    "",
+    "Everything runs on CyAc // OR NOTHING RUNS AT ALL.\n"
+]
+
+for i, line in enumerate(startup_ascii):    
+    print(line)
+    delay = 0.8 * (0.85 ** i)
+    delay = max(delay, 0.01)
+    time.sleep(delay)
+
+progPrint("===========\n\n")
+print("<<ENGAGING AI TRANSLATION LAYER>>")
+
+# Wait for model to finish loading in the background
+load_thread.join()
+
+# Check results of model loading
+if load_error:
     print(consoleColors.WARN + "Failed to load CUDA. Switching to CPU. Check export.log for details.")
     logger.warning("Skipped CUDA initialization. Using CPU instead.")
-    logger.warning(str(e))
-    pass
+    logger.warning(str(load_error))
+else:
+    if device == "cuda":
+        print("Successfully loaded CUDA.\n")
+        logger.info("CUDA Initialized")
+        if torch.cuda.is_available():
+            gpu_properties = torch.cuda.get_device_properties(0)
+            vram_gb = gpu_properties.total_memory / (1024**3)
+            print(f"DETECTED {vram_gb:.1f}GB VRAM // SELECTING MODEL\nSELECTED    >>> ['{model_size}']")
+    else:
+        print("Running on CPU (no CUDA available)\n")
+        logger.info("Running on CPU")
+    
+    if model_size != 'large':
+        print(f"RECCOMENDED >>> ['large']\n[TRANSCRIPTION ACCURACY MAY BE DEGRADED]\n")
+    
+    progPrint("[##############################] 100%\n")
+    print("")
 
 suffix = 1
 # Start loop for reading the files
@@ -164,7 +221,7 @@ for fname in os.listdir(os.getcwd()):
             filenameClean = splitFilename[1]
             try:
                 text = model.transcribe(filenameClean, language="en", fp16=False) # Start transcription
-                sanitizedText = ''.join(c for c in text['text'] if c not in '\/:*?"<>|') # Sanitize text for filename
+                sanitizedText = ''.join(c for c in text['text'] if c not in '\\/:*?"<>|') # Sanitize text for filename
                 if(os.path.isfile('clean\\' + sanitizedText + '.wav') == True): # Check if the dest file already exists
                     print(consoleColors.WARN + "WARNING: FILE WITH THE SAME NAME EXISTS. ADDING SUFFIX.")
                     warn = "File found: " + sanitizedText + ".wav (Source file: " + filenameClean + "). Adding suffix."
